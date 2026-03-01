@@ -153,6 +153,7 @@ export const utilitiesApi = {
             success: true,
             data: filtered.slice(start, start + limit),
             total: filtered.length,
+            totalAmount: filtered.reduce((sum, u) => sum + u.amount, 0),
             page,
             limit,
             totalPages: Math.ceil(filtered.length / limit),
