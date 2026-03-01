@@ -135,7 +135,15 @@ export const utilitiesApi = {
         return { success: true, data: MOCK_CONFIG };
     },
 
-    getAll: async (query: UtilityQuery = {}) => {
+    getAll: async (query: UtilityQuery = {}): Promise<{
+        success: boolean;
+        data: UtilityTransaction[];
+        total: number;
+        totalAmount: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+    }> => {
         await delay(200);
         let filtered = [...mockUtilities];
         if (query.utilityType) filtered = filtered.filter(u => u.utilityType === query.utilityType);
