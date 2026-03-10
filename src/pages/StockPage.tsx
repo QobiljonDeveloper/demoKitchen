@@ -9,7 +9,8 @@ import {
     ArrowUpCircle,
     ArrowUpDown,
     FileBarChart2,
-    MoreHorizontal
+    MoreHorizontal,
+    AlertTriangle,
 } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -63,12 +64,26 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 
 import { ConfirmDialog, EmptyState, ErrorState } from '@/components/common';
-import { StockTransaction, ItemBalance } from '@/api/stock';
+import { StockTransaction, ItemBalance, MonthlyItemBalance } from '@/api/stock';
 import { Item } from '@/api/items';
-import { useStockTransactions, useStockBalances, useCreateStockIn, useCreateStockOut, useDeleteStockTransaction } from '@/hooks/queries/useStock';
+import { useStockTransactions, useStockBalances, useMonthlyBalances, useCreateStockIn, useCreateStockOut, useDeleteStockTransaction } from '@/hooks/queries/useStock';
 import { useActiveItems } from '@/hooks/queries/useItems';
 import { formatQuantity, formatCurrency, toBaseUnit, toBasePrice } from '@/utils/unitConverter';
 
+const MONTHS = [
+    { value: 1, label: 'Yanvar' },
+    { value: 2, label: 'Fevral' },
+    { value: 3, label: 'Mart' },
+    { value: 4, label: 'Aprel' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'Iyun' },
+    { value: 7, label: 'Iyul' },
+    { value: 8, label: 'Avgust' },
+    { value: 9, label: 'Sentabr' },
+    { value: 10, label: 'Oktabr' },
+    { value: 11, label: 'Noyabr' },
+    { value: 12, label: 'Dekabr' },
+];
 
 const stockInSchema = z.object({
     itemId: z.string().min(1, 'Mahsulot tanlanishi shart'),
@@ -89,7 +104,15 @@ const stockOutSchema = z.object({
 type StockInFormData = z.infer<typeof stockInSchema>;
 type StockOutFormData = z.infer<typeof stockOutSchema>;
 
+function getDaysInMonth(year: number, month: number): number {
+    return new Date(year, month, 0).getDate();
+}
+
 export function StockPage() {
+    const now = new Date();
+    const [selectedYear, setSelectedYear] = useState(now.getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1); // 1-based
+
     const [activeTab, setActiveTab] = useState('balances');
     const [isInDialogOpen, setIsInDialogOpen] = useState(false);
     const [isOutDialogOpen, setIsOutDialogOpen] = useState(false);
@@ -102,11 +125,23 @@ export function StockPage() {
         pageSize: 10,
     });
 
-    // Fetch balances
-    const { data: balancesData, isLoading: isBalancesLoading } = useStockBalances();
+    // Month string for API (YYYY-MM)
+    const monthString = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
 
-    // Fetch transactions
-    const { data: transactionsData, isLoading: isTransactionsLoading, isError, refetch } = useStockTransactions({ limit: 100 });
+    // Date range for the selected month
+    const fromDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
+    const lastDay = getDaysInMonth(selectedYear, selectedMonth);
+    const toDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    // Fetch monthly balances (for Qoldiqlar tab)
+    const { data: monthlyBalancesData, isLoading: isBalancesLoading } = useMonthlyBalances(monthString);
+
+    // Fetch transactions filtered by month
+    const { data: transactionsData, isLoading: isTransactionsLoading, isError, refetch } = useStockTransactions({
+        limit: 500,
+        from: fromDate,
+        to: toDate,
+    });
 
     // Fetch active items for dropdown
     const { data: itemsData } = useActiveItems();
@@ -173,6 +208,16 @@ export function StockPage() {
         });
     };
 
+    // Generate year options (current year - 5 to current year + 1)
+    const yearOptions = useMemo(() => {
+        const years: number[] = [];
+        for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 1; y++) {
+            years.push(y);
+        }
+        return years;
+    }, []);
+
+    // Transactions columns
     const columns = useMemo<ColumnDef<StockTransaction>[]>(() => [
         {
             accessorKey: 'date',
@@ -258,8 +303,16 @@ export function StockPage() {
         },
     });
 
-    const balances = balancesData?.data || [];
+    const allMonthlyBalances = monthlyBalancesData?.data || [];
     const items = itemsData?.data || [];
+
+    // Only show items that had transactions (kirim or chiqim) in the selected month
+    const monthlyBalances = useMemo(() => {
+        return allMonthlyBalances.filter(b => b.inQty > 0 || b.outQty > 0);
+    }, [allMonthlyBalances]);
+
+    // Items without any transactions in this month
+    const notInStockCount = allMonthlyBalances.length - monthlyBalances.length;
 
     return (
         <div className="space-y-6">
@@ -286,53 +339,121 @@ export function StockPage() {
                 </div>
             </div>
 
+            {/* Month/Year Selector */}
+            <div className="flex items-center gap-3 p-4 bg-card rounded-lg border">
+                <span className="font-medium text-sm text-muted-foreground">Davr:</span>
+                <Select
+                    value={String(selectedMonth)}
+                    onValueChange={(v) => {
+                        setSelectedMonth(Number(v));
+                        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+                    }}
+                >
+                    <SelectTrigger className="w-[160px]">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {MONTHS.map((m) => (
+                            <SelectItem key={m.value} value={String(m.value)}>
+                                {m.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select
+                    value={String(selectedYear)}
+                    onValueChange={(v) => {
+                        setSelectedYear(Number(v));
+                        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+                    }}
+                >
+                    <SelectTrigger className="w-[120px]">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {yearOptions.map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                                {y}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
                     <TabsTrigger value="balances">Qoldiqlar</TabsTrigger>
                     <TabsTrigger value="transactions">Tarix</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="balances" className="mt-4">
+                <TabsContent value="balances" className="mt-4 space-y-3">
+                    {!isBalancesLoading && notInStockCount > 0 && (
+                        <div className="flex items-center gap-2 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 text-sm">
+                            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                            <span>
+                                <strong>{notInStockCount}</strong> ta mahsulot hali bu oyda omborga kiritilmagan
+                            </span>
+                        </div>
+                    )}
                     {isBalancesLoading ? (
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {[1, 2, 3].map((i) => (
-                                <Card key={i}>
-                                    <CardContent className="p-4">
-                                        <Skeleton className="h-6 w-32 mb-2" />
-                                        <Skeleton className="h-8 w-24" />
-                                    </CardContent>
-                                </Card>
+                        <div className="rounded-md border bg-card p-4 space-y-3">
+                            {[1, 2, 3, 4].map((i) => (
+                                <Skeleton key={i} className="h-10 w-full" />
                             ))}
                         </div>
-                    ) : balances.length === 0 ? (
+                    ) : monthlyBalances.length === 0 ? (
                         <Card>
                             <CardContent className="p-8 text-center text-muted-foreground">
-                                Hozircha qoldiqlar mavjud emas. Mahsulot qo'shing va kirim qiling.
+                                Bu oyda hech qanday ma'lumot topilmadi.
                             </CardContent>
                         </Card>
                     ) : (
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                            {balances.map((balance: ItemBalance) => (
-                                <Card
-                                    key={balance.itemId}
-                                    className={balance.belowMinStock ? 'border-destructive' : ''}
-                                >
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-lg">{balance.itemName}</CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <p className="text-2xl font-bold">
-                                            {formatQuantity(balance.balance, balance.unit)}
-                                        </p>
-                                        {balance.minStock && (
-                                            <p className={`text-sm ${balance.belowMinStock ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                                Min: {formatQuantity(balance.minStock, balance.unit)}
-                                                {balance.belowMinStock && ' ⚠️ Kam qoldiq!'}
-                                            </p>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            ))}
+                        <div className="rounded-md border bg-card">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-[40px]">№</TableHead>
+                                        <TableHead>Mahsulot</TableHead>
+                                        <TableHead>O'lchov</TableHead>
+                                        <TableHead className="text-right">Bosh qoldiq</TableHead>
+                                        <TableHead className="text-right text-green-600">Kirim</TableHead>
+                                        <TableHead className="text-right text-red-600">Chiqim</TableHead>
+                                        <TableHead className="text-right font-bold">Oxirgi qoldiq</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {monthlyBalances.map((b: MonthlyItemBalance, idx: number) => (
+                                        <TableRow
+                                            key={b.itemId}
+                                            className={b.belowMinStock ? 'bg-red-50 dark:bg-red-950/30' : ''}
+                                        >
+                                            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                                            <TableCell className="font-medium">
+                                                {b.itemName}
+                                                {b.belowMinStock && (
+                                                    <span className="ml-2 text-xs text-destructive">⚠️ Kam</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">{b.unit}</TableCell>
+                                            <TableCell className="text-right">
+                                                {formatQuantity(b.openingBalance, b.unit)}
+                                            </TableCell>
+                                            <TableCell className="text-right text-green-600 font-medium">
+                                                {b.inQty > 0 ? `+${formatQuantity(b.inQty, b.unit)}` : '-'}
+                                            </TableCell>
+                                            <TableCell className="text-right text-red-600 font-medium">
+                                                {b.outQty > 0 ? `-${formatQuantity(b.outQty, b.unit)}` : '-'}
+                                            </TableCell>
+                                            <TableCell className="text-right font-bold">
+                                                {formatQuantity(b.closingBalance, b.unit)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                            <div className="p-3 border-t text-sm text-muted-foreground">
+                                Jami {monthlyBalances.length} ta mahsulot | {MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear}
+                            </div>
                         </div>
                     )}
                 </TabsContent>
@@ -375,7 +496,7 @@ export function StockPage() {
                                 ) : (
                                     <TableRow>
                                         <TableCell colSpan={columns.length} className="h-24 text-center">
-                                            {isTransactionsLoading ? 'Yuklanmoqda...' : 'Hozircha ma\'lumot yo\'q'}
+                                            {isTransactionsLoading ? 'Yuklanmoqda...' : `${MONTHS.find(m => m.value === selectedMonth)?.label} ${selectedYear} da hech qanday amaliyot topilmadi`}
                                         </TableCell>
                                     </TableRow>
                                 )}
@@ -385,7 +506,7 @@ export function StockPage() {
 
                     <div className="flex items-center justify-end space-x-2 py-4">
                         <div className="flex-1 text-sm text-muted-foreground">
-                            Jami {table.getFilteredRowModel().rows.length} ta amaliyot
+                            Jami {table.getFilteredRowModel().rows.length} ta amaliyot ({MONTHS.find(m => m.value === selectedMonth)?.label} {selectedYear})
                         </div>
                         <div className="space-x-2">
                             <Button

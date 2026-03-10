@@ -438,7 +438,7 @@ export function ItemsPage() {
                                 <Label>Mahsulot turi</Label>
                                 <Select
                                     value={watch('itemType')}
-                                    onValueChange={(v) => setValue('itemType', v as ItemFormData['itemType'])}
+                                    onValueChange={(v) => setValue('itemType', v as ItemFormData['itemType'], { shouldValidate: true, shouldDirty: true })}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
@@ -458,11 +458,12 @@ export function ItemsPage() {
                                 <Select
                                     value={watch('unitType')}
                                     onValueChange={(v) => {
-                                        setValue('unitType', v as ItemFormData['unitType']);
+                                        const unitType = v as ItemFormData['unitType'];
+                                        setValue('unitType', unitType, { shouldValidate: true, shouldDirty: true });
                                         // Reset unit based on type
-                                        const units = UNITS[v as keyof typeof UNITS];
+                                        const units = UNITS[unitType as keyof typeof UNITS];
                                         if (units.length > 0) {
-                                            setValue('unit', units[0].value as ItemFormData['unit']);
+                                            setValue('unit', units[0].value as ItemFormData['unit'], { shouldValidate: true, shouldDirty: true });
                                         }
                                     }}
                                 >
@@ -483,8 +484,9 @@ export function ItemsPage() {
                         <div className="space-y-2">
                             <Label>O'lchov birligi</Label>
                             <Select
+                                key={watchUnitType}
                                 value={watch('unit')}
-                                onValueChange={(v) => setValue('unit', v as ItemFormData['unit'])}
+                                onValueChange={(v) => setValue('unit', v as ItemFormData['unit'], { shouldValidate: true, shouldDirty: true })}
                                 disabled={watchUnitType === 'COUNT'}
                             >
                                 <SelectTrigger>
